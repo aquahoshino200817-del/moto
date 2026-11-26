@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Kyrgyzstan Moto Racing 3D</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      background: #090d16;
+      color: #f8fafc;
+    }
+    #game-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+    #rain-visor-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.4); border-radius: 999px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.45); border-radius: 999px; }
+    .touch-btn {
+      touch-action: manipulation;
+      transition: transform 0.08s ease, background-color 0.12s ease;
+    }
+    .touch-btn:active {
+      transform: scale(0.92);
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 18px rgba(14, 165, 233, 0.45); }
+      50% { box-shadow: 0 0 32px rgba(56, 189, 248, 0.85); }
+    }
+    .btn-primary-glow {
+      animation: pulseGlow 2.4s infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- 3D WebGL Viewport -->
+  <div id="game-container"></div>
+
+  <!-- Visor Raindrops Overlay (active only in rainy regions) -->
+  <canvas id="rain-visor-canvas"></canvas>
+
+  <!-- TOP UTILITY BAR (Language, Graphics, Sound, Reload) -->
+  <div class="fixed top-3 left-3 right-3 z-30 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <!-- Coin Balance -->
+      <div class="glass-panel px-3.5 py-1.5 rounded-full flex items-center gap-2 text-sm font-extrabold text-amber-300">
+        <span>🪙</span>
+        <span id="coin-display">500</span>
+      </div>
+      <!-- Language Switcher -->
+      <div class="glass-panel p-1 rounded-full flex items-center gap-1 text-xs font-bold">
+        <button onclick="setLanguage('ky')" id="lang-ky" class="px-2.5 py-1 rounded-full transition">KY</button>
+        <button onclick="setLanguage('ru')" id="lang-ru" class="px-2.5 py-1 rounded-full transition">RU</button>
+        <button onclick="setLanguage('en')" id="lang-en" class="px-2.5 py-1 rounded-full transition">EN</button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <!-- Graphics Quality Selector -->
+      <button onclick="cycleGraphicsQuality()" id="btn-gfx" class="glass-panel px-3 py-1.5 rounded-full text-xs font-bold text-sky-300 hover:bg-slate-800/90 transition flex items-center gap-1.5">
+        <span>⚙️</span>
+        <span id="gfx-label">Ультра</span>
+      </button>
+      <!-- Sound Mute Toggle -->
+      <button onclick="toggleMute()" id="btn-mute" class="glass-panel w-9 h-9 rounded-full flex items-center justify-center text-sm hover:bg-slate-800/90 transition" title="Sound">
+        🔊
+      </button>
+      <!-- Reload Button -->
+      <button onclick="hardReloadGame()" class="glass-panel px-3 py-1.5 rounded-full text-xs font-bold text-emerald-300 hover:bg-slate-800/90 transition flex items-center gap-1" title="Reload">
+        <span>🔄</span>
+        <span class="hidden sm:inline" data-i18n="reload">Перезагрузить</span>
+      </button>
+      <!-- Pause Button (visible during race) -->
+      <button onclick="togglePause()" id="btn-pause" class="hidden glass-panel w-9 h-9 rounded-full items-center justify-center text-sm font-bold hover:bg-slate-800/90 transition">
+        ⏸️
+      </button>
+    </div>
+  </div>
+
+  <!-- MAIN MENU OVERLAY -->
+  <div id="menu-screen" class="fixed inset-0 z-20 flex items-center justify-center p-3 sm:p-6 bg-gradient-to-t from-slate-950/90 via-slate-950/45 to-slate-950/65">
+    <div class="glass-panel w-full max-w-5xl rounded-3xl p-4 sm:p-7 flex flex-col max-h-[88vh] overflow-hidden">
+      <!-- Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-700/60">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-bold mb-1">
+            <span>🇰🇬</span>
+            <span data-i18n="subtitle">Озеро Иссык-Куль и Регионы Кыргызстана</span>
+          </div>
+          <h1 class="text-2xl sm:text-4xl font-black tracking-tight bg-gradient-to-r from-white via-sky-200 to-amber-300 bg-clip-text text-transparent">
+            KYRGYZSTAN MOTO RACING 3D
+          </h1>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="switchMenuTab('tracks')" id="tab-tracks" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-sky-500 text-slate-950 transition" data-i18n="tabTracks">Трассы (14)</button>
+          <button onclick="switchMenuTab('garage')" id="tab-garage" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-800/80 text-slate-200 hover:bg-slate-700 transition" data-i18n="tabGarage">Мотогараж (9)</button>
+          <button onclick="switchMenuTab('shop')" id="tab-shop" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-800/80 text-slate-200 hover:bg-slate-700 transition" data-i18n="tabShop">Экипировка</button>
+        </div>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="flex-1 overflow-y-auto custom-scroll py-4 pr-1">
+        <!-- 1. TRACKS GRID -->
+        <div id="panel-tracks" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+
+        <!-- 2. MOTORCYCLE GARAGE -->
+        <div id="panel-garage" class="hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+
+        <!-- 3. EQUIPMENT & TUNING SHOP -->
+        <div id="panel-shop" class="hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- Footer Action Bar -->
+      <div class="pt-3 border-t border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="text-xs text-slate-300 flex flex-wrap items-center gap-3">
+          <span>🏍️ <strong id="selected-bike-label" class="text-sky-300">Тулпар-150</strong></span>
+          <span>📍 <strong id="selected-track-label" class="text-amber-300">Бишкек</strong></span>
+          <span class="hidden md:inline text-slate-400" data-i18n="controlsHint">Управление: WASD / Стрелки, Пробел — Нитро</span>
+        </div>
+        <button onclick="startRace()" class="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-sky-400 to-emerald-400 hover:from-sky-300 hover:to-emerald-300 text-slate-950 font-black text-base tracking-wide btn-primary-glow transition cursor-pointer" data-i18n="startRace">
+          СТАРТ ГОНКИ 🏁
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IN-RACE HUD -->
+  <div id="hud-screen" class="hidden fixed inset-0 z-20 pointer-events-none">
+    <!-- Top Center Telemetry -->
+    <div class="fixed top-14 sm:top-3 left-1/2 -translate-x-1/2 flex items-center gap-3 glass-panel px-4 py-2 rounded-2xl">
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400" data-i18n="hudPos">Позиция</div>
+        <div id="hud-rank" class="text-lg sm:text-xl font-black text-amber-300">1/4</div>
+      </div>
+      <div class="w-px h-7 bg-slate-700"></div>
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400" data-i18n="hudProgress">Прогресс</div>
+        <div id="hud-progress" class="text-lg sm:text-xl font-black text-sky-300">0%</div>
+      </div>
+      <div class="w-px h-7 bg-slate-700"></div>
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400" data-i18n="hudTime">Время</div>
+        <div id="hud-time" class="text-lg sm:text-xl font-black text-white">00:00</div>
+      </div>
+    </div>
+
+    <!-- Crash Notification Banner -->
+    <div id="crash-banner" class="hidden fixed top-28 left-1/2 -translate-x-1/2 px-5 py-2 rounded-2xl bg-rose-600/90 border border-rose-300 text-white font-black text-sm sm:text-base shadow-2xl animate-bounce" data-i18n="crashMsg">
+      💥 АВАРИЯ! Пилот упал с мотоцикла...
+    </div>
+
+    <!-- Mini Radar (Top Left under bar) -->
+    <div class="hidden sm:block fixed top-16 left-4 glass-panel p-2 rounded-2xl">
+      <canvas id="radar-canvas" width="110" height="150" class="rounded-xl bg-slate-950/70"></canvas>
+    </div>
+
+    <!-- Speedometer & Nitro Gauge (Bottom Left) -->
+    <div class="fixed bottom-4 left-4 glass-panel px-4 py-3 rounded-2xl flex items-center gap-4">
+      <div>
+        <div class="flex items-baseline gap-1">
+          <span id="hud-speed" class="text-3xl sm:text-4xl font-black text-white">0</span>
+          <span class="text-xs font-bold text-sky-400">KM/H</span>
+        </div>
+        <!-- Nitro Bar -->
+        <div class="mt-1.5 w-32 sm:w-40 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+          <div id="hud-nitro-bar" class="h-full bg-gradient-to-r from-sky-400 via-cyan-300 to-amber-300 transition-all duration-75" style="width: 100%"></div>
+        </div>
+        <div class="text-[10px] font-bold text-cyan-300 mt-0.5">NITRO (SPACE)</div>
+      </div>
+    </div>
+
+    <!-- Mobile Touch Controls (Bottom Right & Left) -->
+    <div id="mobile-controls" class="fixed bottom-4 right-4 flex items-end gap-2.5 pointer-events-auto sm:opacity-85">
+      <div class="flex gap-2">
+        <button id="touch-left" class="touch-btn glass-panel w-14 h-14 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-2xl font-black text-white active:bg-sky-500/40">◀</button>
+        <button id="touch-right" class="touch-btn glass-panel w-14 h-14 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-2xl font-black text-white active:bg-sky-500/40">▶</button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <button id="touch-nitro" class="touch-btn px-4 h-11 rounded-2xl bg-amber-500/90 text-slate-950 font-black text-xs shadow-lg active:bg-amber-400">🔥 NITRO</button>
+        <div class="flex gap-2">
+          <button id="touch-brake" class="touch-btn glass-panel w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black text-rose-300 active:bg-rose-500/40">▼</button>
+          <button id="touch-gas" class="touch-btn w-14 h-12 rounded-2xl bg-emerald-500/90 text-slate-950 font-black text-lg shadow-lg active:bg-emerald-400">▲</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAUSE MODAL -->
+  <div id="pause-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
+    <div class="glass-panel w-full max-w-sm rounded-3xl p-6 text-center space-y-4">
+      <h2 class="text-2xl font-black text-white" data-i18n="pauseTitle">ПАУЗА</h2>
+      <div class="space-y-2.5">
+        <button onclick="togglePause()" class="w-full py-3 rounded-xl bg-sky-400 text-slate-950 font-black text-sm hover:bg-sky-300 transition" data-i18n="resume">Продолжить</button>
+        <button onclick="startRace()" class="w-full py-3 rounded-xl bg-slate-800 text-white font-bold text-sm hover:bg-slate-700 transition" data-i18n="restartTrack">Заново</button>
+        <button onclick="returnToMenu()" class="w-full py-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 font-bold text-sm hover:bg-rose-500/30 transition" data-i18n="toMenu">В главное меню</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FINISH MODAL -->
+  <div id="finish-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-md rounded-3xl p-6 text-center space-y-4">
+      <div class="text-5xl">🏆</div>
+      <h2 class="text-2xl sm:text-3xl font-black text-amber-300" data-i18n="finishTitle">ФИНИШ!</h2>
+      <div class="grid grid-cols-3 gap-2 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+        <div>
+          <div class="text-[11px] text-slate-400" data-i18n="hudPos">Место</div>
+          <div id="fin-rank" class="text-xl font-black text-white">1 / 4</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-slate-400" data-i18n="hudTime">Время</div>
+          <div id="fin-time" class="text-xl font-black text-sky-300">00:45</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-slate-400" data-i18n="reward">Награда</div>
+          <div id="fin-reward" class="text-xl font-black text-amber-300">+250 🪙</div>
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="startRace()" class="flex-1 py-3 rounded-xl bg-slate-800 text-white font-bold text-sm hover:bg-slate-700 transition" data-i18n="restartTrack">Ещё раз</button>
+        <button onclick="returnToMenu()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-sky-400 to-emerald-400 text-slate-950 font-black text-sm hover:opacity-95 transition" data-i18n="toMenu">В меню</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTHOR SIGNATURE BADGE (Bottom Right Corner) -->
+  <button onclick="editAuthorSignature()" id="author-badge" class="fixed bottom-1.5 right-2 z-30 px-2.5 py-0.5 rounded-full bg-slate-950/75 border border-slate-700/60 text-[10px] font-semibold text-slate-300 hover:text-amber-300 hover:border-amber-400/50 transition cursor-pointer" title="Нажмите, чтобы изменить подпись">
+    ✍️ Created by Kyrgyz Rider
+  </button>
+
+  <!-- Inline Custom Signature Editor Modal (replaces prompt/alert) -->
+  <div id="sig-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75">
+    <div class="glass-panel w-full max-w-xs rounded-2xl p-4 space-y-3">
+      <div class="text-sm font-bold text-white" data-i18n="editSigTitle">Ваша подпись в углу экрана:</div>
+      <input id="sig-input" type="text" maxlength="32" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-sky-400" />
+      <div class="flex gap-2 justify-end">
+        <button onclick="closeSigModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-xs font-bold text-slate-300">Отмена</button>
+        <button onclick="saveSigModal()" class="px-3 py-1.5 rounded-lg bg-sky-400 text-xs font-black text-slate-950">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. LOCALIZATION DICTIONARY (KYRGYZ / RUSSIAN / ENGLISH)
+    // =========================================================================
+    const LOCALES = {
+      ky: {
+        subtitle: 'Ысык-Көл жана Кыргызстандын аймактары',
+        tabTracks: 'Жолдор (14)',
+        tabGarage: 'Мотогараж (9)',
+        tabShop: 'Экипировка',
+        controlsHint: 'Башкаруу: WASD / Жебелер, Пробел — Нитро',
+        startRace: 'ЖАРЫШТЫ БАШТОО 🏁',
+        hudPos: 'Орун',
+        hudProgress: 'Жол',
+        hudTime: 'Убакыт',
+        crashMsg: '💥 КЫРСЫК! Мотоциклден кулап түштүңүз...',
+        pauseTitle: 'ТЫНЫГУУ',
+        resume: 'Улантуу',
+        restartTrack: 'Кайра баштоо',
+        toMenu: 'Башкы менюга',
+        finishTitle: 'МАРА!',
+        reward: 'Сыйлык',
+        reload: 'Жаңылоо',
+        buy: 'Сатып алуу',
+        select: 'Тандоо',
+        selected: 'Тандалды ✓',
+        equipped: 'Кийилди ✓',
+        rainBadge: '🌧️ Жамгыр',
+        stormBadge: '⛈️ Нөшөр',
+        sunBadge: '☀️ Ачык',
+        speed: 'Ылдамдык',
+        accel: 'Тездетүү',
+        handling: 'Башкаруу',
+        gfxLevels: ['Төмөн', 'Орто', 'Жогорку', 'Ультра'],
+        editSigTitle: 'Бурчтагы кол тамгаңыз:'
+      },
+      ru: {
+        subtitle: 'Озеро Иссык-Куль и Регионы Кыргызстана',
+        tabTracks: 'Трассы (14)',
+        tabGarage: 'Мотогараж (9)',
+        tabShop: 'Экипировка',
+        controlsHint: 'Управление: WASD / Стрелки, Пробел — Нитро',
+        startRace: 'СТАРТ ГОНКИ 🏁',
+        hudPos: 'Позиция',
+        hudProgress: 'Прогресс',
+        hudTime: 'Время',
+        crashMsg: '💥 АВАРИЯ! Пилот упал с мотоцикла...',
+        pauseTitle: 'ПАУЗА',
+        resume: 'Продолжить',
+        restartTrack: 'Заново',
+        toMenu: 'В главное меню',
+        finishTitle: 'ФИНИШ!',
+        reward: 'Награда',
+        reload: 'Перезагрузить',
+        buy: 'Купить',
+        select: 'Выбрать',
+        selected: 'Выбрано ✓',
+        equipped: 'Надето ✓',
+        rainBadge: '🌧️ Дождь',
+        stormBadge: '⛈️ Ливень',
+        sunBadge: '☀️ Ясно',
+        speed: 'Скорость',
+        accel: 'Разгон',
+        handling: 'Рулёжка',
+        gfxLevels: ['Низкая', 'Средняя', 'Высокая', 'Ультра'],
+        editSigTitle: 'Ваша подпись в углу экрана:'
+      },
+      en: {
+        subtitle: 'Lake Issyk-Kul & Regions of Kyrgyzstan',
+        tabTracks: 'Tracks (14)',
+        tabGarage: 'Garage (9)',
+        tabShop: 'Gear Shop',
+        controlsHint: 'Controls: WASD / Arrows, Space — Nitro',
+        startRace: 'START RACE 🏁',
+        hudPos: 'Position',
+        hudProgress: 'Progress',
+        hudTime: 'Time',
+        crashMsg: '💥 CRASH! Rider fell off the bike...',
+        pauseTitle: 'PAUSED',
+        resume: 'Resume',
+        restartTrack: 'Restart',
+        toMenu: 'Main Menu',
+        finishTitle: 'FINISH!',
+        reward: 'Reward',
+        reload: 'Reload',
+        buy: 'Buy',
+        select: 'Select',
+        selected: 'Selected ✓',
+        equipped: 'Equipped ✓',
+        rainBadge: '🌧️ Rain',
+        stormBadge: '⛈️ Storm',
+        sunBadge: '☀️ Clear',
+        speed: 'Top Speed',
+        accel: 'Accel',
+        handling: 'Handling',
+        gfxLevels: ['Low', 'Medium', 'High', 'Ultra'],
+        editSigTitle: 'Your corner signature:'
+      }
+    };
+
+    // =========================================================================
+    // 2. DATA: 14 REGIONS OF KYRGYZSTAN, 9 MOTORCYCLES, 9 GEAR ITEMS
+    // =========================================================================
+    const TRACKS = [
+      {
+        id: 'bishkek',
+        name: { ky: 'Бишкек — Ала-Тоо', ru: 'Бишкек — Площадь Ала-Тоо', en: 'Bishkek — Ala-Too' },
+        desc: { ky: 'Борбор калаанын кең проспектиси', ru: 'Широкий столичный проспект с трамплинами', en: 'Wide capital avenue with ramps' },
+        sky: 0x38bdf8, fog: 0x7dd3fc, ground: 0x3f6212, hasLake: false, weather: 'clear', reward: 220, botSpeed: 1.0
+      },
+      {
+        id: 'issyk_kul',
+        name: { ky: 'Ысык-Көл (Чолпон-Ата)', ru: 'Иссык-Куль (Чолпон-Ата)', en: 'Issyk-Kul (Cholpon-Ata)' },
+        desc: { ky: 'Көгүлтүр көл жээгиндеги шоссе', ru: 'Живописное шоссе вдоль бирюзового озера', en: 'Scenic highway along the turquoise lake' },
+        sky: 0x0ea5e9, fog: 0xbae6fd, ground: 0xd97706, hasLake: true, weather: 'clear', reward: 250, botSpeed: 1.04
+      },
+      {
+        id: 'boom',
+        name: { ky: 'Боом капчыгайы', ru: 'Боомское ущелье', en: 'Boom Gorge' },
+        desc: { ky: 'Аскалуу капчыгай жана жамгыр', ru: 'Скалистый каньон и моросящий дождь', en: 'Rocky canyon with canyon drizzle' },
+        sky: 0x475569, fog: 0x64748b, ground: 0x57534e, hasLake: false, weather: 'rain', reward: 300, botSpeed: 1.08
+      },
+      {
+        id: 'suusamyr',
+        name: { ky: 'Суусамыр өрөөнү', ru: 'Долина Суусамыр', en: 'Suusamyr Valley' },
+        desc: { ky: 'Бийик тоолуу жашыл жайлоо', ru: 'Высокогорное изумрудное плато', en: 'High-altitude emerald alpine valley' },
+        sky: 0x38bdf8, fog: 0xe0f2fe, ground: 0x15803d, hasLake: false, weather: 'clear', reward: 320, botSpeed: 1.1
+      },
+      {
+        id: 'naryn',
+        name: { ky: 'Нарын — Долон ашуусу', ru: 'Нарын — Перевал Долон', en: 'Naryn — Dolon Pass' },
+        desc: { ky: '3030м бийиктиктеги тоо нөшөрү', ru: 'Горный ливень и гроза на перевале', en: 'Mountain thunderstorm at 3030m pass' },
+        sky: 0x1e293b, fog: 0x334155, ground: 0x475569, hasLake: false, weather: 'storm', reward: 360, botSpeed: 1.13
+      },
+      {
+        id: 'son_kul',
+        name: { ky: 'Соң-Көл көлү', ru: 'Озеро Сон-Куль', en: 'Lake Son-Kul' },
+        desc: { ky: 'Асман тиреген тоо көлүнүн жээги', ru: 'Высокогорное озеро и юрточные городки', en: 'Alpine lake shoreline and yurt camps' },
+        sky: 0x0284c7, fog: 0x7dd3fc, ground: 0x4d7c0f, hasLake: true, weather: 'clear', reward: 380, botSpeed: 1.15
+      },
+      {
+        id: 'karakol',
+        name: { ky: 'Каракол — Тоо этеги', ru: 'Каракол — Горные склоны', en: 'Karakol — Mountain Slopes' },
+        desc: { ky: 'Тянь-Шань карагайларынын арасы', ru: 'Трасса среди тянь-шаньских елей', en: 'Track through Tien Shan spruce forests' },
+        sky: 0x38bdf8, fog: 0xbae6fd, ground: 0x166534, hasLake: true, weather: 'clear', reward: 400, botSpeed: 1.18
+      },
+      {
+        id: 'jalal_abad',
+        name: { ky: 'Жалал-Абад — Курорт', ru: 'Джалал-Абад — Курортные холмы', en: 'Jalal-Abad — Resort Hills' },
+        desc: { ky: 'Күнгөй адырлар жана тез бурулуштар', ru: 'Солнечные холмы и скоростные виражи', en: 'Sunny hills and high-speed curves' },
+        sky: 0xf59e0b, fog: 0xfde68a, ground: 0x65a30d, hasLake: false, weather: 'clear', reward: 420, botSpeed: 1.2
+      },
+      {
+        id: 'arslanbob',
+        name: { ky: 'Арсланбап жаңгак токою', ru: 'Ореховые леса Арсланбоб', en: 'Arslanbob Walnut Forest' },
+        desc: { ky: 'Жылуу жамгыр жана жашыл токой', ru: 'Тёплый лесной дождь и густая листва', en: 'Warm forest rain and lush greenery' },
+        sky: 0x334155, fog: 0x475569, ground: 0x14532d, hasLake: false, weather: 'rain', reward: 450, botSpeed: 1.22
+      },
+      {
+        id: 'toktogul',
+        name: { ky: 'Токтогул суу сактагычы', ru: 'Токтогульское водохранилище', en: 'Toktogul Reservoir' },
+        desc: { ky: 'Бирюза суу жээгиндеги серпантин', ru: 'Бирюзовая гладь воды и горный серпантин', en: 'Turquoise reservoir and mountain winding road' },
+        sky: 0x0ea5e9, fog: 0xbae6fd, ground: 0xb45309, hasLake: true, weather: 'clear', reward: 480, botSpeed: 1.25
+      },
+      {
+        id: 'osh',
+        name: { ky: 'Ош — Сулайман-Тоо', ru: 'Ош — Сулайман-Тоо', en: 'Osh — Sulaiman-Too' },
+        desc: { ky: 'Байыркы шаардын күн батыш трассасы', ru: 'Закатная трасса у священной горы', en: 'Sunset highway near the sacred mountain' },
+        sky: 0xea580c, fog: 0xfdba74, ground: 0x92400e, hasLake: false, weather: 'clear', reward: 510, botSpeed: 1.27
+      },
+      {
+        id: 'alay',
+        name: { ky: 'Алай өрөөнү (Ленин чокусу)', ru: 'Алайская долина (Пик Ленина)', en: 'Alay Valley (Lenin Peak)' },
+        desc: { ky: 'Памир тоолорундагы бороон-чапкын', ru: 'Штормовой ливень у подножия Памира', en: 'Stormy downpour at the foot of Pamir' },
+        sky: 0x1e1b4b, fog: 0x312e81, ground: 0x334155, hasLake: false, weather: 'storm', reward: 550, botSpeed: 1.3
+      },
+      {
+        id: 'talas',
+        name: { ky: 'Талас — Манас Ордо', ru: 'Талас — Манас Ордо', en: 'Talas — Manas Ordo' },
+        desc: { ky: 'Баатырлар мекениндеги ылдам жол', ru: 'Скоростная трасса в долине Таласа', en: 'High-speed track in the Talas valley' },
+        sky: 0x0284c7, fog: 0xbae6fd, ground: 0x4d7c0f, hasLake: false, weather: 'clear', reward: 580, botSpeed: 1.33
+      },
+      {
+        id: 'batken',
+        name: { ky: 'Баткен — Айгүл-Таш', ru: 'Баткен — Гора Айгүл-Таш', en: 'Batken — Aigul-Tash' },
+        desc: { ky: 'Гранд-финал: нөшөрлөгөн жамгыр', ru: 'Гранд-финал: штормовой ливень и трафик', en: 'Grand Finale: heavy rainstorm & traffic' },
+        sky: 0x0f172a, fog: 0x1e293b, ground: 0x78350f, hasLake: false, weather: 'storm', reward: 650, botSpeed: 1.36
+      }
+    ];
+
+    const BIKES = [
+      { id: 'tulpar150', name: 'Тулпар-150', price: 0, color: 0xef4444, accent: 0xfbbf24, maxSpeed: 145, accel: 46, handling: 2.3, type: 'street' },
+      { id: 'ilbirs600', name: 'Илбирс-600 Enduro', price: 350, color: 0x10b981, accent: 0xf8fafc, maxSpeed: 168, accel: 55, handling: 2.65, type: 'enduro' },
+      { id: 'alatoo450', name: 'Ала-Тоо Rally 450', price: 650, color: 0xf97316, accent: 0x1e293b, maxSpeed: 182, accel: 60, handling: 2.55, type: 'rally' },
+      { id: 'manas800', name: 'Манас Cruiser 800', price: 950, color: 0x1e293b, accent: 0xf59e0b, maxSpeed: 196, accel: 58, handling: 2.25, type: 'cruiser' },
+      { id: 'boom750', name: 'Боом Streetfighter 750', price: 1300, color: 0x8b5cf6, accent: 0x38bdf8, maxSpeed: 212, accel: 68, handling: 2.8, type: 'naked' },
+      { id: 'naryn900', name: 'Нарын Adventure 900', price: 1700, color: 0x0ea5e9, accent: 0xfacc15, maxSpeed: 226, accel: 72, handling: 2.6, type: 'rally' },
+      { id: 'shumkar1000', name: 'Ак-Шумкар 1000RR', price: 2200, color: 0xf8fafc, accent: 0xdc2626, maxSpeed: 245, accel: 80, handling: 2.9, type: 'sport' },
+      { id: 'hantengri1200', name: 'Хан-Тенгри 1200GT', price: 2800, color: 0x06b6d4, accent: 0x0f172a, maxSpeed: 262, accel: 85, handling: 2.75, type: 'sport' },
+      { id: 'buura1400', name: 'Буура Hyper-X 1400', price: 3600, color: 0xfacc15, accent: 0x111827, maxSpeed: 285, accel: 94, handling: 3.05, type: 'hyper' }
+    ];
+
+    const GEAR_ITEMS = [
+      { id: 'engine_kit', icon: '⚙️', price: 250, name: { ky: 'Спорт кыймылдаткыч', ru: 'Спорт-двигатель', en: 'Sport Engine Kit' }, desc: { ky: '+14% максималдуу ылдамдык', ru: '+14% к максимальной скорости', en: '+14% top speed boost' } },
+      { id: 'nitro_tank', icon: '🔥', price: 300, name: { ky: 'Чоң Нитро баллон', ru: 'Увеличенный бак Нитро', en: 'XL Nitro Tank' }, desc: { ky: '+40% нитро кубаттуулугу', ru: '+40% длительности и тяги Нитро', en: '+40% Nitro capacity & thrust' } },
+      { id: 'armor_suit', icon: '🛡️', price: 350, name: { ky: 'Моточерепаха жана шлем', ru: 'Моточерепаха и шлем', en: 'Pro Armor & Helmet' }, desc: { ky: 'Кырсыкка туруктуулукту жогорулатат', ru: 'Снижает риск падения при ударах', en: 'Increases crash resistance threshold' } },
+      { id: 'carbon_gloves', icon: '🧤', price: 280, name: { ky: 'Карбон кол каптар', ru: 'Карбоновые мотоперчатки', en: 'Carbon Moto Gloves' }, desc: { ky: '+15% бурулуш тактыгы', ru: '+15% точность и отзывчивость руля', en: '+15% steering responsiveness' } },
+      { id: 'cross_boots', icon: '👢', price: 320, name: { ky: 'Кросс мотоботтор', ru: 'Кроссовые мотоботы', en: 'Motocross Boots' }, desc: { ky: 'Трамплинден +22% бийик секирүү', ru: '+22% высота прыжка с трамплинов', en: '+22% jump boost off ramps' } },
+      { id: 'anti_rain_visor', icon: '🥽', price: 240, name: { ky: 'Анти-жамгыр визор', ru: 'Антидождевой визор', en: 'Hydrophobic Visor' }, desc: { ky: 'Жамгыр тамчыларын 70% азайтат', ru: 'Уменьшает капли дождя на экране на 70%', en: 'Reduces rain droplets on screen by 70%' } },
+      { id: 'radar_pro', icon: '📡', price: 380, name: { ky: 'Радар-детектор', ru: 'Радар-детектор', en: 'Pro Radar Detector' }, desc: { ky: '+18% ылдамдыкка кошумча разгон', ru: '+18% к ускорению со старта', en: '+18% acceleration boost' } },
+      { id: 'turbo_cap', icon: '🔋', price: 420, name: { ky: 'Турбо-конденсатор', ru: 'Турбо-конденсатор', en: 'Turbo Capacitor' }, desc: { ky: 'Нитро 2 эсе тез толот', ru: 'Нитро восстанавливается в 2 раза быстрее', en: '2x faster Nitro regeneration' } },
+      { id: 'berkut_cup', icon: '🏅', price: 500, name: { ky: 'Бүркүт кубогу (VIP)', ru: 'Кубок Беркута (VIP)', en: 'Berkut Cup (VIP)' }, desc: { ky: 'Жарыш сыйлыгы +35% көбөйөт', ru: '+35% призовых монет за каждый финиш', en: '+35% bonus coins after every race' } }
+    ];
+
+    // =========================================================================
+    // 3. GAME STATE & PERSISTENCE (LOCALSTORAGE)
+    // =========================================================================
+    const STORAGE_KEY = 'kg_moto_racing_save_v3';
+    let saveState = {
+      lang: 'ru',
+      coins: 500,
+      ownedBikes: ['tulpar150'],
+      selectedBike: 'tulpar150',
+      ownedGear: [],
+      selectedTrackIdx: 0,
+      gfxQuality: 3, // 0=Low, 1=Med, 2=High, 3=Ultra
+      signature: 'Created by Kyrgyz Rider'
+    };
+
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        saveState = { ...saveState, ...parsed };
+      }
+    } catch (e) {}
+
+    function persistSave() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saveState));
+      } catch (e) {}
+    }
+
+    // Runtime Game Variables
+    let gameMode = 'menu'; // 'menu' | 'racing' | 'paused' | 'finished'
+    let currentTrackIdx = saveState.selectedTrackIdx || 0;
+    let isMuted = false;
+
+    // Physics State
+    const bikePhys = {
+      x: 0,
+      y: 0.15,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      speed: 0,
+      steerAngle: 0,
+      rollAngle: 0,
+      pitchAngle: 0,
+      nitro: 100,
+      grounded: true,
+      raceTime: 0
+    };
+
+    const keys = { left: false, right: false, up: false, down: false, nitro: false };
+
+    // =========================================================================
+    // 4. PROCEDURAL WEB AUDIO ENGINE (ENGINE ROAR, CRASH, RAIN)
+    // =========================================================================
+    let audioCtx = null;
+    let engineOsc = null;
+    let engineGain = null;
+    let rainGain = null;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+
+        // Engine synthesizer
+        engineOsc = audioCtx.createOscillator();
+        engineOsc.type = 'sawtooth';
+        engineOsc.frequency.value = 55;
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 320;
+
+        engineGain = audioCtx.createGain();
+        engineGain.gain.value = 0.0;
+
+        engineOsc.connect(filter);
+        filter.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        engineOsc.start();
+
+        // Rain white-noise loop
+        const bufferSize = audioCtx.sampleRate * 2;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+
+        const whiteNoise = audioCtx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+
+        const rainFilter = audioCtx.createBiquadFilter();
+        rainFilter.type = 'bandpass';
+        rainFilter.frequency.value = 1100;
+
+        rainGain = audioCtx.createGain();
+        rainGain.gain.value = 0.0;
+
+        whiteNoise.connect(rainFilter);
+        rainFilter.connect(rainGain);
+        rainGain.connect(audioCtx.destination);
+        whiteNoise.start();
+      } catch (e) {}
+    }
+
+    function updateAudio(dt) {
+      if (!audioCtx || !engineOsc || !engineGain) return;
+      if (isMuted || gameMode !== 'racing') {
+        engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.08);
+        if (rainGain) rainGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+        return;
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const speedRatio = Math.min(Math.abs(bikePhys.speed) / 260, 1.2);
+      const targetFreq = 48 + speedRatio * 155 + (keys.nitro && bikePhys.nitro > 2 ? 35 : 0);
+      engineOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.06);
+      engineGain.gain.setTargetAtTime(crashState.active ? 0.02 : 0.065 + speedRatio * 0.05, audioCtx.currentTime, 0.08);
+
+      const tr = TRACKS[currentTrackIdx];
+      if (rainGain) {
+        const targetRain = (tr.weather === 'rain' || tr.weather === 'storm') ? 0.045 : 0.0;
+        rainGain.gain.setTargetAtTime(targetRain, audioCtx.currentTime, 0.2);
+      }
+    }
+
+    function playCrashSound() {
+      if (isMuted || !audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(28, audioCtx.currentTime + 0.35);
+        g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.38);
+        osc.connect(g);
+        g.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.4);
+      } catch (e) {}
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      document.getElementById('btn-mute').textContent = isMuted ? '🔇' : '🔊';
+    }
+
+    function hardReloadGame() {
+      window.location.reload();
+    }
+
+    // =========================================================================
+    // 5. THREE.JS 3D WORLD, COMPACT MOUNTAIN HIGHWAY & WEATHER
+    // =========================================================================
+    let scene, camera, renderer, waterMesh, sunSphereMesh;
+    let rainSystem = null, rainPositions = null, rainVelocities = null, rainCount = 0;
+    let playerBike = null, riderGroup = null, frontWheel = null, rearWheel = null, nitroFlame = null;
+    let worldGroup, trackGroup, obstaclesGroup, opponentsGroup, sparksGroup;
+    let obstacles = [];
+    let opponents = [];
+    let sparks = [];
+    let lightningFlash = 0;
+
+    // Crash / Rider Fall State
+    const crashState = {
+      active: false,
+      timer: 0,
+      duration: 1.65,
+      bikeVx: 0,
+      bikeVz: 0,
+      bikeRoll: 0,
+      bikeRollDir: 1,
+      riderPos: new THREE.Vector3(),
+      riderVel: new THREE.Vector3(),
+      riderRot: new THREE.Vector3(),
+      riderAngVel: new THREE.Vector3()
+    };
+
+    // Realistic compact 2-4 lane mountain highway (76 meters total width)
+    const ROAD_HALF_WIDTH = 38;
+    const ROAD_SEGMENT_LEN = 32;
+    const ROAD_TOTAL_Z = 5600;
+
+    function getRoadCenterX(z) {
+      return Math.sin(z * 0.0014) * 52 + Math.cos(z * 0.0006) * 26;
+    }
+
+    function getRoadSlopeAngle(z) {
+      const dx = 52 * 0.0014 * Math.cos(z * 0.0014) - 26 * 0.0006 * Math.sin(z * 0.0006);
+      return Math.atan(dx);
+    }
+
+    function getRoadHeight(x, z) {
+      return 0.15;
+    }
+
+    function initThree() {
+      const container = document.getElementById('game-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x38bdf8);
+      scene.fog = new THREE.FogExp2(0x7dd3fc, 0.00085);
+
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || window.innerHeight;
+      camera = new THREE.PerspectiveCamera(62, width / height, 0.5, 4200);
+      camera.position.set(0, 5.5, 12);
+
+      try {
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      } catch (e) {
+        renderer = new THREE.WebGLRenderer({ antialias: false });
+      }
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      container.innerHTML = '';
+      container.appendChild(renderer.domElement);
+
+      // Lighting
+      const ambient = new THREE.AmbientLight(0xdbeafe, 0.92);
+      ambient.name = 'ambientLight';
+      scene.add(ambient);
+
+      const hemi = new THREE.HemisphereLight(0xbae6fd, 0x1e293b, 0.85);
+      hemi.name = 'hemiLight';
+      scene.add(hemi);
+
+      const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.45);
+      sunLight.name = 'sunLight';
+      sunLight.position.set(180, 320, -240);
+      scene.add(sunLight);
+
+      worldGroup = new THREE.Group();
+      trackGroup = new THREE.Group();
+      obstaclesGroup = new THREE.Group();
+      opponentsGroup = new THREE.Group();
+      sparksGroup = new THREE.Group();
+
+      scene.add(worldGroup);
+      scene.add(trackGroup);
+      scene.add(obstaclesGroup);
+      scene.add(opponentsGroup);
+      scene.add(sparksGroup);
+
+      createEnvironment();
+      createSlantedRainSystem();
+      rebuildPlayerBike();
+      buildTrack(currentTrackIdx);
+
+      window.addEventListener('resize', () => {
+        if (!renderer || !camera) return;
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        resizeVisorCanvas();
+      });
+    }
+
+    function createEnvironment() {
+      while (worldGroup.children.length > 0) worldGroup.remove(worldGroup.children[0]);
+
+      // Sun disc
+      const sunGeo = new THREE.SphereGeometry(55, 24, 24);
+      const sunMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+      sunSphereMesh = new THREE.Mesh(sunGeo, sunMat);
+      sunSphereMesh.position.set(320, 420, -2600);
+      worldGroup.add(sunSphereMesh);
+
+      // Ground terrain plane
+      const groundGeo = new THREE.PlaneGeometry(5000, 7500);
+      const groundMat = new THREE.MeshLambertMaterial({ color: 0x3f6212 });
+      const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+      groundMesh.name = 'groundMesh';
+      groundMesh.rotation.x = -Math.PI / 2;
+      groundMesh.position.set(0, -0.2, -2600);
+      worldGroup.add(groundMesh);
+
+      // Turquoise Lake Plane on the right side of the highway (visible on lake tracks)
+      const waterGeo = new THREE.PlaneGeometry(2400, 7200);
+      const waterMat = new THREE.MeshPhongMaterial({
+        color: 0x0284c7,
+        emissive: 0x0369a1,
+        emissiveIntensity: 0.25,
+        shininess: 95,
+        transparent: true,
+        opacity: 0.92
+      });
+      waterMesh = new THREE.Mesh(waterGeo, waterMat);
+      waterMesh.rotation.x = -Math.PI / 2;
+      waterMesh.position.set(1310, 0.02, -2600);
+      worldGroup.add(waterMesh);
+
+      // Distant Snow-Capped Tien Shan Peaks (strictly outside road bounds |X| > 340)
+      const mountainMat = new THREE.MeshLambertMaterial({ color: 0x475569 });
+      const snowMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+
+      for (let i = 0; i < 48; i++) {
+        const z = 200 - i * 130;
+        [-1, 1].forEach((side) => {
+          const dist = 360 + (i % 5) * 95 + Math.random() * 80;
+          const x = getRoadCenterX(z) + side * dist;
+          const h = 160 + (i % 4) * 75 + Math.random() * 60;
+          const r = 130 + Math.random() * 70;
+
+          const peak = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), mountainMat);
+          peak.position.set(x, h * 0.48, z);
+          worldGroup.add(peak);
+
+          const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 0.42, h * 0.42, 7), snowMat);
+          cap.position.set(x, h * 0.77, z);
+          worldGroup.add(cap);
+        });
+      }
+    }
+
+    // Slanted Rain Streaks (LineSegments — realistic rain, not snow dots)
+    function createSlantedRainSystem() {
+      if (rainSystem) scene.remove(rainSystem);
+      rainCount = saveState.gfxQuality === 0 ? 400 : (saveState.gfxQuality === 1 ? 900 : 1800);
+      const geom = new THREE.BufferGeometry();
+      rainPositions = new Float32Array(rainCount * 6); // 2 vertices per rain streak
+      rainVelocities = new Float32Array(rainCount);
+
+      for (let i = 0; i < rainCount; i++) {
+        const rx = (Math.random() - 0.5) * 180;
+        const ry = Math.random() * 70;
+        const rz = (Math.random() - 0.5) * 220;
+        rainVelocities[i] = 68 + Math.random() * 35;
+
+        const idx = i * 6;
+        rainPositions[idx] = rx;
+        rainPositions[idx + 1] = ry;
+        rainPositions[idx + 2] = rz;
+        // Streak tail slanted by wind
+        rainPositions[idx + 3] = rx + 0.55;
+        rainPositions[idx + 4] = ry + 3.4;
+        rainPositions[idx + 5] = rz - 0.8;
+      }
+
+      geom.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+      const mat = new THREE.LineBasicMaterial({
+        color: 0xcbd5e1,
+        transparent: true,
+        opacity: 0.58
+      });
+      rainSystem = new THREE.LineSegments(geom, mat);
+      rainSystem.visible = false;
+      scene.add(rainSystem);
+    }
+
+    function updateRain3D(dt) {
+      if (!rainSystem || !rainSystem.visible) return;
+      const posAttr = rainSystem.geometry.attributes.position;
+      const arr = posAttr.array;
+      const windX = -8.5;
+      const streakLen = 3.2 + Math.min(bikePhys.speed * 0.015, 2.5);
+
+      for (let i = 0; i < rainCount; i++) {
+        const idx = i * 6;
+        const vy = rainVelocities[i];
+        arr[idx] += windX * dt;
+        arr[idx + 1] -= vy * dt;
+        arr[idx + 2] += (bikePhys.speed * 0.28) * dt;
+
+        if (arr[idx + 1] < 0 || arr[idx + 2] > bikePhys.z + 35) {
+          arr[idx] = bikePhys.x + (Math.random() - 0.5) * 160;
+          arr[idx + 1] = 45 + Math.random() * 28;
+          arr[idx + 2] = bikePhys.z - 160 + Math.random() * 190;
+        }
+        arr[idx + 3] = arr[idx] + 0.65;
+        arr[idx + 4] = arr[idx + 1] + streakLen;
+        arr[idx + 5] = arr[idx + 2] - (0.7 + bikePhys.speed * 0.012);
+      }
+      posAttr.needsUpdate = true;
+    }
+
+    // =========================================================================
+    // 6. DETAILED 3D MOTORCYCLE & RIDER BUILDER
+    // =========================================================================
+    function createBikeMesh(bikeCfg) {
+      const root = new THREE.Group();
+
+      const bodyMat = new THREE.MeshPhongMaterial({ color: bikeCfg.color, shininess: 90 });
+      const accentMat = new THREE.MeshPhongMaterial({ color: bikeCfg.accent, shininess: 70 });
+      const darkMetal = new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 50 });
+      const chromeMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 120 });
+      const tireMat = new THREE.MeshLambertMaterial({ color: 0x111827 });
+
+      // Wheels
+      const wheelGeo = new THREE.TorusGeometry(0.46, 0.14, 10, 20);
+      const rWheel = new THREE.Mesh(wheelGeo, tireMat);
+      rWheel.rotation.y = Math.PI / 2;
+      rWheel.position.set(0, 0.46, 1.15);
+      root.add(rWheel);
+
+      const fWheel = new THREE.Mesh(wheelGeo, tireMat);
+      fWheel.rotation.y = Math.PI / 2;
+      fWheel.position.set(0, 0.46, -1.25);
+      root.add(fWheel);
+
+      // Rim hubs
+      const hubGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.18, 12);
+      hubGeo.rotateZ(Math.PI / 2);
+      const rHub = new THREE.Mesh(hubGeo, accentMat);
+      rHub.position.copy(rWheel.position);
+      root.add(rHub);
+      const fHub = new THREE.Mesh(hubGeo, accentMat);
+      fHub.position.copy(fWheel.position);
+      root.add(fHub);
+
+      // Engine Block & Twin Exhausts
+      const engine = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.52, 0.85), darkMetal);
+      engine.position.set(0, 0.68, 0.05);
+      root.add(engine);
+
+      [-0.24, 0.24].forEach((exX) => {
+        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.15, 10), chromeMat);
+        pipe.rotation.x = Math.PI / 2 - 0.18;
+        pipe.position.set(exX, 0.56, 0.85);
+        root.add(pipe);
+      });
+
+      // Fuel Tank & Fairing (varies by bike type)
+      const tank = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.42, 0.95), bodyMat);
+      tank.position.set(0, 1.05, -0.25);
+      root.add(tank);
+
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.85, 6), bodyMat);
+      nose.rotation.x = -Math.PI / 2 + 0.25;
+      nose.position.set(0, 1.08, -0.95);
+      root.add(nose);
+
+      // Windshield / Rally Tower
+      const shieldH = bikeCfg.type === 'rally' ? 0.55 : 0.36;
+      const windshield = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, shieldH, 0.06),
+        new THREE.MeshPhongMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 })
+      );
+      windshield.rotation.x = -0.45;
+      windshield.position.set(0, 1.36, -0.85);
+      root.add(windshield);
+
+      // Hyper-bike rear wing or Rally panniers
+      if (bikeCfg.type === 'hyper' || bikeCfg.type === 'sport') {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.06, 0.22), accentMat);
+        wing.position.set(0, 1.24, 1.15);
+        root.add(wing);
+      } else if (bikeCfg.type === 'rally') {
+        [-0.38, 0.38].forEach((px) => {
+          const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 0.55), accentMat);
+          box.position.set(px, 0.92, 0.88);
+          root.add(box);
+        });
+      }
+
+      // Front Forks & Handlebar
+      [-0.18, 0.18].forEach((fx) => {
+        const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.95, 8), chromeMat);
+        fork.rotation.x = 0.34;
+        fork.position.set(fx, 0.92, -0.98);
+        root.add(fork);
+      });
+
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.82, 8), darkMetal);
+      bar.rotation.z = Math.PI / 2;
+      bar.position.set(0, 1.32, -0.72);
+      root.add(bar);
+
+      // Headlight
+      const headlight = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 10, 10),
+        new THREE.MeshBasicMaterial({ color: 0xfef08a })
+      );
+      headlight.position.set(0, 1.08, -1.28);
+      root.add(headlight);
+
+      // Seat
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.85), darkMetal);
+      seat.position.set(0, 0.96, 0.55);
+      root.add(seat);
+
+      return { root, fWheel, rWheel };
+    }
+
+    function createRiderMesh(jacketColor, helmetColor) {
+      const g = new THREE.Group();
+      const suitMat = new THREE.MeshLambertMaterial({ color: jacketColor });
+      const pantsMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+      const helmetMat = new THREE.MeshPhongMaterial({ color: helmetColor, shininess: 100 });
+      const visorMat = new THREE.MeshPhongMaterial({ color: 0x0284c7, shininess: 120 });
+
+      // Torso leaning forward
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.28), suitMat);
+      torso.rotation.x = 0.42;
+      torso.position.set(0, 1.38, 0.22);
+      g.add(torso);
+
+      // Helmet & Visor
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 14), helmetMat);
+      helmet.position.set(0, 1.78, -0.02);
+      g.add(helmet);
+
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.16), visorMat);
+      visor.position.set(0, 1.77, -0.18);
+      g.add(visor);
+
+      // Arms reaching handlebar
+      [-0.26, 0.26].forEach((ax) => {
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.58, 8), suitMat);
+        arm.rotation.x = 1.05;
+        arm.position.set(ax, 1.42, -0.26);
+        g.add(arm);
+      });
+
+      // Legs gripping tank
+      [-0.22, 0.22].forEach((lx) => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.065, 0.62, 8), pantsMat);
+        leg.rotation.x = -0.35;
+        leg.position.set(lx, 0.88, 0.35);
+        g.add(leg);
+      });
+
+      return g;
+    }
+
+    function rebuildPlayerBike() {
+      if (playerBike) scene.remove(playerBike);
+      if (riderGroup) scene.remove(riderGroup);
+
+      const cfg = BIKES.find((b) => b.id === saveState.selectedBike) || BIKES[0];
+      const built = createBikeMesh(cfg);
+      playerBike = built.root;
+      frontWheel = built.fWheel;
+      rearWheel = built.rWheel;
+
+      // Nitro Exhaust Flame
+      const flameGeo = new THREE.ConeGeometry(0.18, 1.1, 10);
+      flameGeo.rotateX(Math.PI / 2);
+      const flameMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
+      nitroFlame = new THREE.Mesh(flameGeo, flameMat);
+      nitroFlame.position.set(0, 0.62, 1.85);
+      nitroFlame.visible = false;
+      playerBike.add(nitroFlame);
+
+      scene.add(playerBike);
+
+      // Rider (can detach during crash!)
+      riderGroup = createRiderMesh(cfg.accent, cfg.color);
+      scene.add(riderGroup);
+    }
+
+    // =========================================================================
+    // 7. TRACK BUILDER (COMPACT 76M HIGHWAY, YURTS, TREES, RAMPS, TRAFFIC)
+    // =========================================================================
+    function buildTrack(trackIdx) {
+      currentTrackIdx = trackIdx;
+      const tr = TRACKS[trackIdx];
+
+      // Update Atmosphere & Weather
+      scene.background = new THREE.Color(tr.sky);
+      scene.fog = new THREE.FogExp2(tr.fog, tr.weather === 'storm' ? 0.0014 : 0.00085);
+
+      const sunLight = scene.getObjectByName('sunLight');
+      if (sunLight) {
+        sunLight.intensity = tr.weather === 'storm' ? 0.75 : (tr.weather === 'rain' ? 0.95 : 1.45);
+      }
+
+      const groundMesh = worldGroup.getObjectByName('groundMesh');
+      if (groundMesh) groundMesh.material.color.setHex(tr.ground);
+      if (waterMesh) waterMesh.visible = tr.hasLake;
+
+      if (rainSystem) {
+        rainSystem.visible = (tr.weather === 'rain' || tr.weather === 'storm');
+      }
+
+      while (trackGroup.children.length > 0) trackGroup.remove(trackGroup.children[0]);
+      while (obstaclesGroup.children.length > 0) obstaclesGroup.remove(obstaclesGroup.children[0]);
+      while (opponentsGroup.children.length > 0) opponentsGroup.remove(opponentsGroup.children[0]);
+
+      obstacles = [];
+      opponents = [];
+
+      const isWet = (tr.weather === 'rain' || tr.weather === 'storm');
+      const roadMat = new THREE.MeshPhongMaterial({
+        color: isWet ? 0x1e293b : 0x334155,
+        shininess: isWet ? 95 : 15
+      });
+      const stripeMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+      const yellowMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+      const railMat = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
+      const yurtWallMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+      const yurtRoofMat = new THREE.MeshLambertMaterial({ color: 0xd97706 });
+      const treeMat = new THREE.MeshLambertMaterial({ color: 0x14532d });
+      const trunkMat = new THREE.MeshLambertMaterial({ color: 0x451a03 });
+
+      const segments = Math.ceil(ROAD_TOTAL_Z / ROAD_SEGMENT_LEN);
+      for (let i = -4; i <= segments; i++) {
+        const z = -i * ROAD_SEGMENT_LEN;
+        const cx = getRoadCenterX(z);
+        const slope = getRoadSlopeAngle(z);
+
+        // Compact 76m Asphalt Strip
+        const roadSeg = new THREE.Mesh(
+          new THREE.PlaneGeometry(ROAD_HALF_WIDTH * 2, ROAD_SEGMENT_LEN + 1.5),
+          roadMat
+        );
+        roadSeg.rotation.x = -Math.PI / 2;
+        roadSeg.rotation.z = -slope;
+        roadSeg.position.set(cx, 0.12, z);
+        trackGroup.add(roadSeg);
+
+        // Center double yellow & dashed lane lines
+        const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.6, ROAD_SEGMENT_LEN * 0.65), yellowMat);
+        centerLine.rotation.x = -Math.PI / 2;
+        centerLine.rotation.z = -slope;
+        centerLine.position.set(cx, 0.14, z);
+        trackGroup.add(centerLine);
+
+        [-18, 18].forEach((laneOff) => {
+          if (i % 2 === 0) {
+            const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.4, ROAD_SEGMENT_LEN * 0.5), stripeMat);
+            dash.rotation.x = -Math.PI / 2;
+            dash.rotation.z = -slope;
+            dash.position.set(cx + laneOff, 0.14, z);
+            trackGroup.add(dash);
+          }
+        });
+
+        // Guardrails right on the road shoulders
+        [-ROAD_HALF_WIDTH - 0.8, ROAD_HALF_WIDTH + 0.8].forEach((sideOff) => {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, ROAD_SEGMENT_LEN + 1), railMat);
+          rail.rotation.y = -slope;
+          rail.position.set(cx + sideOff, 0.65, z);
+          trackGroup.add(rail);
+        });
+
+        // Roadside Kyrgyz Yurts & Tien Shan Spruces close to the shoulders
+        if (i > 2 && i % 6 === 0) {
+          const side = (i % 12 === 0) ? -1 : 1;
+          const yurtX = cx + side * (ROAD_HALF_WIDTH + 14);
+          const base = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 2.8, 14), yurtWallMat);
+          base.position.set(yurtX, 1.4, z);
+          trackGroup.add(base);
+
+          const dome = new THREE.Mesh(new THREE.ConeGeometry(4.8, 2.4, 14), yurtRoofMat);
+          dome.position.set(yurtX, 4.0, z);
+          trackGroup.add(dome);
+        }
+
+        if (i > 1 && i % 3 === 0) {
+          [-1, 1].forEach((side) => {
+            if (tr.hasLake && side === 1 && i % 6 === 0) return;
+            const tx = cx + side * (ROAD_HALF_WIDTH + 8 + (i % 4) * 4);
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 6), trunkMat);
+            trunk.position.set(tx, 1.5, z);
+            trackGroup.add(trunk);
+
+            const foliage = new THREE.Mesh(new THREE.ConeGeometry(2.6, 8.5, 7), treeMat);
+            foliage.position.set(tx, 6.5, z);
+            trackGroup.add(foliage);
+          });
+        }
+
+        // Checkpoint Arches every 25 segments
+        if (i > 0 && i % 25 === 0 && i < segments - 5) {
+          const archGroup = new THREE.Group();
+          const pillarGeo = new THREE.BoxGeometry(1.4, 14, 1.4);
+          const pillarMat = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+          const pL = new THREE.Mesh(pillarGeo, pillarMat);
+          pL.position.set(-ROAD_HALF_WIDTH + 1, 7, 0);
+          const pR = new THREE.Mesh(pillarGeo, pillarMat);
+          pR.position.set(ROAD_HALF_WIDTH - 1, 7, 0);
+          const banner = new THREE.Mesh(
+            new THREE.BoxGeometry(ROAD_HALF_WIDTH * 2, 2.2, 1.2),
+            new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+          );
+          banner.position.set(0, 13.5, 0);
+          archGroup.add(pL, pR, banner);
+          archGroup.position.set(cx, 0, z);
+          trackGroup.add(archGroup);
+        }
+      }
+
+      // Finish Line Gate at Z = -ROAD_TOTAL_Z
+      const finZ = -ROAD_TOTAL_Z;
+      const finX = getRoadCenterX(finZ);
+      const finGate = new THREE.Mesh(
+        new THREE.BoxGeometry(ROAD_HALF_WIDTH * 2, 3.2, 2),
+        new THREE.MeshBasicMaterial({ color: 0x10b981 })
+      );
+      finGate.position.set(finX, 14, finZ);
+      trackGroup.add(finGate);
+
+      // Obstacles: Ramps, Boulders & Oncoming Minibuses/SUVs
+      const rockMat = new THREE.MeshLambertMaterial({ color: 0x78716c });
+      const rampMat = new THREE.MeshPhongMaterial({ color: 0xf97316, emissive: 0x9a3412, emissiveIntensity: 0.3 });
+      const carColors = [0xe2e8f0, 0x3b82f6, 0xef4444, 0xfacc15];
+
+      for (let z = -220; z > -ROAD_TOTAL_Z + 180; z -= 145) {
+        const cx = getRoadCenterX(z);
+        const laneX = cx + (Math.random() - 0.5) * (ROAD_HALF_WIDTH * 1.45);
+        const roll = Math.random();
+
+        if (roll < 0.28) {
+          // Jump Ramp
+          const ramp = new THREE.Mesh(new THREE.BoxGeometry(7.5, 1.3, 11), rampMat);
+          ramp.rotation.x = 0.22;
+          ramp.position.set(laneX, 0.55, z);
+          obstaclesGroup.add(ramp);
+          obstacles.push({ type: 'ramp', mesh: ramp, x: laneX, z, w: 3.8, l: 5.5, speedZ: 0 });
+        } else if (roll < 0.62) {
+          // Roadside Boulder
+          const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(2.1, 0), rockMat);
+          rock.position.set(laneX, 1.4, z);
+          obstaclesGroup.add(rock);
+          obstacles.push({ type: 'rock', mesh: rock, x: laneX, z, w: 2.0, l: 2.0, speedZ: 0 });
+        } else {
+          // Traffic Vehicle (Sprinter Marshrutka / SUV)
+          const carGroup = new THREE.Group();
+          const cCol = carColors[Math.floor(Math.random() * carColors.length)];
+          const body = new THREE.Mesh(
+            new THREE.BoxGeometry(3.2, 2.4, 6.4),
+            new THREE.MeshPhongMaterial({ color: cCol })
+          );
+          body.position.y = 1.4;
+          const cabin = new THREE.Mesh(
+            new THREE.BoxGeometry(2.9, 1.1, 4.2),
+            new THREE.MeshPhongMaterial({ color: 0x0f172a })
+          );
+          cabin.position.y = 2.6;
+          carGroup.add(body, cabin);
+          carGroup.position.set(laneX, 0.15, z);
+          obstaclesGroup.add(carGroup);
+          obstacles.push({
+            type: 'car',
+            mesh: carGroup,
+            x: laneX,
+            z,
+            offsetFromCenter: laneX - cx,
+            w: 1.8,
+            l: 3.3,
+            speedZ: 32 + Math.random() * 22
+          });
+        }
+      }
+
+      // 3 AI Opponent Motorcyclists
+      const botIds = ['ilbirs600', 'boom750', 'shumkar1000'];
+      botIds.forEach((bId, idx) => {
+        const bCfg = BIKES.find((b) => b.id === bId) || BIKES[1];
+        const built = createBikeMesh(bCfg);
+        const botRider = createRiderMesh(bCfg.accent, bCfg.color);
+        built.root.add(botRider);
+
+        const startLane = (idx - 1) * 9;
+        built.root.position.set(getRoadCenterX(0) + startLane, 0.15, -6 - idx * 3);
+        opponentsGroup.add(built.root);
+
+        opponents.push({
+          mesh: built.root,
+          fWheel: built.fWheel,
+          rWheel: built.rWheel,
+          laneOffset: startLane,
+          z: -6 - idx * 3,
+          speed: (145 + idx * 16) * tr.botSpeed
+        });
+      });
+    }
+
+    // =========================================================================
+    // 8. CRASH & RIDER RAGDOLL FALL PHYSICS
+    // =========================================================================
+    function triggerRiderCrash(impactSpeed) {
+      if (crashState.active) return;
+      crashState.active = true;
+      crashState.timer = 0;
+      crashState.bikeVx = (Math.random() - 0.5) * 14;
+      crashState.bikeVz = -Math.max(impactSpeed * 0.22, 16);
+      crashState.bikeRoll = 0;
+      crashState.bikeRollDir = Math.random() < 0.5 ? -1 : 1;
+
+      // Launch rider forward & upward off the saddle
+      crashState.riderPos.set(bikePhys.x, bikePhys.y + 1.2, bikePhys.z);
+      crashState.riderVel.set(
+        (Math.random() - 0.5) * 12,
+        9.5 + Math.min(impactSpeed * 0.04, 6),
+        -Math.max(impactSpeed * 0.34, 24)
+      );
+      crashState.riderRot.set(0, 0, 0);
+      crashState.riderAngVel.set(
+        6 + Math.random() * 4,
+        (Math.random() - 0.5) * 5,
+        (Math.random() - 0.5) * 6
+      );
+
+      bikePhys.speed = 0;
+      keys.nitro = false;
+      playCrashSound();
+
+      const banner = document.getElementById('crash-banner');
+      if (banner) banner.classList.remove('hidden');
+
+      spawnCrashSparks(bikePhys.x, 0.6, bikePhys.z, 26);
+    }
+
+    function spawnCrashSparks(x, y, z, count) {
+      const sparkGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+      const sparkMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+      for (let i = 0; i < count; i++) {
+        const m = new THREE.Mesh(sparkGeo, sparkMat);
+        m.position.set(x, y, z);
+        sparksGroup.add(m);
+        sparks.push({
+          mesh: m,
+          vx: (Math.random() - 0.5) * 18,
+          vy: 3 + Math.random() * 9,
+          vz: (Math.random() - 0.5) * 18,
+          life: 0.55 + Math.random() * 0.35
+        });
+      }
+    }
+
+    function updateSparks(dt) {
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.life -= dt;
+        s.vy -= 22 * dt;
+        s.mesh.position.x += s.vx * dt;
+        s.mesh.position.y = Math.max(0.1, s.mesh.position.y + s.vy * dt);
+        s.mesh.position.z += s.vz * dt;
+        if (s.life <= 0) {
+          sparksGroup.remove(s.mesh);
+          sparks.splice(i, 1);
+        }
+      }
+    }
+
+    function updateCrashPhysics(dt) {
+      crashState.timer += dt;
+
+      // Bike slides on its side with sparks
+      bikePhys.x += crashState.bikeVx * dt;
+      bikePhys.z += crashState.bikeVz * dt;
+      crashState.bikeVx *= Math.pow(0.18, dt);
+      crashState.bikeVz *= Math.pow(0.18, dt);
+      crashState.bikeRoll = THREE.MathUtils.lerp(crashState.bikeRoll, crashState.bikeRollDir * (Math.PI * 0.46), dt * 9);
+
+      if (Math.abs(crashState.bikeVz) > 3 && Math.random() < 0.65) {
+        spawnCrashSparks(bikePhys.x, 0.35, bikePhys.z, 2);
+      }
+
+      if (playerBike) {
+        playerBike.position.set(bikePhys.x, 0.32, bikePhys.z);
+        playerBike.rotation.set(0, 0, crashState.bikeRoll);
+      }
+
+      // Rider tumbles along ballistic arc and slides on asphalt
+      crashState.riderVel.y -= 26 * dt;
+      crashState.riderPos.addScaledVector(crashState.riderVel, dt);
+
+      if (crashState.riderPos.y <= 0.35) {
+        crashState.riderPos.y = 0.35;
+        if (crashState.riderVel.y < -2) {
+          crashState.riderVel.y = -crashState.riderVel.y * 0.32;
+        } else {
+          crashState.riderVel.y = 0;
+        }
+        crashState.riderVel.x *= Math.pow(0.12, dt);
+        crashState.riderVel.z *= Math.pow(0.12, dt);
+        crashState.riderAngVel.multiplyScalar(Math.pow(0.08, dt));
+      }
+
+      crashState.riderRot.x += crashState.riderAngVel.x * dt;
+      crashState.riderRot.y += crashState.riderAngVel.y * dt;
+      crashState.riderRot.z += crashState.riderAngVel.z * dt;
+
+      if (riderGroup) {
+        riderGroup.position.copy(crashState.riderPos);
+        riderGroup.rotation.set(crashState.riderRot.x, crashState.riderRot.y, crashState.riderRot.z);
+      }
+
+      // Recover back onto the bike
+      if (crashState.timer >= crashState.duration) {
+        crashState.active = false;
+        const roadCx = getRoadCenterX(bikePhys.z);
+        bikePhys.x = THREE.MathUtils.clamp(bikePhys.x, roadCx - ROAD_HALF_WIDTH + 4, roadCx + ROAD_HALF_WIDTH - 4);
+        bikePhys.y = 0.15;
+        bikePhys.vy = 0;
+        bikePhys.speed = 35;
+        bikePhys.rollAngle = 0;
+
+        const banner = document.getElementById('crash-banner');
+        if (banner) banner.classList.add('hidden');
+      }
+    }
+
+    // =========================================================================
+    // 9. VISOR RAINDROPS OVERLAY (2D CANVAS — ONLY ON RAIN/STORM TRACKS)
+    // =========================================================================
+    const visorCanvas = document.getElementById('rain-visor-canvas');
+    const visorCtx = visorCanvas.getContext('2d');
+    let visorDrops = [];
+
+    function resizeVisorCanvas() {
+      visorCanvas.width = window.innerWidth;
+      visorCanvas.height = window.innerHeight;
+    }
+    resizeVisorCanvas();
+
+    function updateAndDrawVisorRain(dt) {
+      visorCtx.clearRect(0, 0, visorCanvas.width, visorCanvas.height);
+      const tr = TRACKS[currentTrackIdx];
+      const isRainy = (tr && (tr.weather === 'rain' || tr.weather === 'storm'));
+
+      // Strictly NO droplets on clear/dry tracks!
+      if (!isRainy || gameMode !== 'racing') {
+        visorDrops = [];
+        return;
+      }
+
+      const hasAntiRain = saveState.ownedGear.includes('anti_rain_visor');
+      const spawnRate = (tr.weather === 'storm' ? 18 : 10) * (hasAntiRain ? 0.3 : 1.0);
+
+      if (Math.random() < spawnRate * dt * 3) {
+        visorDrops.push({
+          x: Math.random() * visorCanvas.width,
+          y: Math.random() * visorCanvas.height * 0.85,
+          r: 2.5 + Math.random() * 5.5,
+          vy: 28 + Math.random() * 55,
+          alpha: 0.45 + Math.random() * 0.35,
+          trail: []
+        });
+      }
+
+      for (let i = visorDrops.length - 1; i >= 0; i--) {
+        const d = visorDrops[i];
+        d.trail.push({ x: d.x, y: d.y, r: d.r * 0.65 });
+        if (d.trail.length > 8) d.trail.shift();
+
+        d.y += (d.vy + bikePhys.speed * 0.25) * dt;
+        d.x += (Math.random() - 0.5) * 14 * dt;
+        d.alpha -= 0.16 * dt;
+
+        // Wet streak trail
+        for (let t = 0; t < d.trail.length; t++) {
+          const pt = d.trail[t];
+          visorCtx.beginPath();
+          visorCtx.arc(pt.x, pt.y, pt.r * (t / d.trail.length), 0, Math.PI * 2);
+          visorCtx.fillStyle = `rgba(224, 242, 254, ${d.alpha * 0.25})`;
+          visorCtx.fill();
+        }
+
+        // Main droplet with specular highlight
+        visorCtx.beginPath();
+        visorCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+        visorCtx.fillStyle = `rgba(186, 230, 253, ${d.alpha * 0.42})`;
+        visorCtx.fill();
+        visorCtx.strokeStyle = `rgba(255, 255, 255, ${d.alpha * 0.65})`;
+        visorCtx.lineWidth = 1;
+        visorCtx.stroke();
+
+        if (d.alpha <= 0.02 || d.y > visorCanvas.height + 20) {
+          visorDrops.splice(i, 1);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 10. MAIN SIMULATION LOOP (PHYSICS, COLLISIONS, CAMERA, HUD)
+    // =========================================================================
+    let lastTimestamp = performance.now();
+
+    function updateSimulation(dt) {
+      updateAudio(dt);
+      updateSparks(dt);
+      updateRain3D(dt);
+      updateAndDrawVisorRain(dt);
+
+      // Menu showcase camera orbit
+      if (gameMode === 'menu') {
+        const t = performance.now() * 0.0005;
+        if (playerBike && riderGroup) {
+          const cx = getRoadCenterX(0);
+          playerBike.position.set(cx, 0.15, 0);
+          playerBike.rotation.set(0, Math.sin(t) * 0.35, 0);
+          riderGroup.position.set(cx, 0.15, 0);
+          riderGroup.rotation.set(0, Math.sin(t) * 0.35, 0);
+          camera.position.set(cx + Math.sin(t) * 5.5, 3.2, 6.2);
+          camera.lookAt(cx, 1.1, -1.5);
+        }
+        return;
+      }
+
+      if (gameMode !== 'racing') return;
+
+      bikePhys.raceTime += dt;
+      const tr = TRACKS[currentTrackIdx];
+      const bikeCfg = BIKES.find((b) => b.id === saveState.selectedBike) || BIKES[0];
+
+      // Gear multipliers
+      const hasEngine = saveState.ownedGear.includes('engine_kit');
+      const hasNitro = saveState.ownedGear.includes('nitro_tank');
+      const hasArmor = saveState.ownedGear.includes('armor_suit');
+      const hasGloves = saveState.ownedGear.includes('carbon_gloves');
+      const hasBoots = saveState.ownedGear.includes('cross_boots');
+      const hasRadar = saveState.ownedGear.includes('radar_pro');
+      const hasTurbo = saveState.ownedGear.includes('turbo_cap');
+
+      const topSpeed = bikeCfg.maxSpeed * (hasEngine ? 1.14 : 1.0);
+      const accelRate = bikeCfg.accel * (hasRadar ? 1.18 : 1.0);
+      const steerRate = bikeCfg.handling * (hasGloves ? 1.15 : 1.0);
+      const isWet = (tr.weather === 'rain' || tr.weather === 'storm');
+
+      // Lightning flash on stormy tracks
+      if (tr.weather === 'storm') {
+        if (Math.random() < 0.006) lightningFlash = 1.0;
+        if (lightningFlash > 0) {
+          lightningFlash = Math.max(0, lightningFlash - dt * 4.5);
+          scene.background.setHex(lightningFlash > 0.4 ? 0xe2e8f0 : tr.sky);
+        }
+      }
+
+      // Update AI Opponents
+      opponents.forEach((bot, idx) => {
+        bot.z -= (bot.speed * 0.42) * dt;
+        const targetX = getRoadCenterX(bot.z) + bot.laneOffset + Math.sin(bikePhys.raceTime * 1.3 + idx) * 2.5;
+        bot.mesh.position.x = THREE.MathUtils.lerp(bot.mesh.position.x, targetX, dt * 3);
+        bot.mesh.position.z = bot.z;
+        bot.mesh.rotation.y = -getRoadSlopeAngle(bot.z);
+        if (bot.fWheel) bot.fWheel.rotation.x -= dt * 18;
+        if (bot.rWheel) bot.rWheel.rotation.x -= dt * 18;
+      });
+
+      // Update Traffic Vehicles
+      obstacles.forEach((ob) => {
+        if (ob.type === 'car') {
+          ob.z += ob.speedZ * dt;
+          if (ob.z > bikePhys.z + 60) ob.z -= 1600;
+          ob.x = getRoadCenterX(ob.z) + ob.offsetFromCenter;
+          ob.mesh.position.set(ob.x, 0.15, ob.z);
+        }
+      });
+
+      // Handle Crash State or Normal Riding
+      if (crashState.active) {
+        updateCrashPhysics(dt);
+      } else {
+        // Throttle & Braking
+        const nitroActive = keys.nitro && bikePhys.nitro > 2 && bikePhys.speed > 15;
+        const effectiveTop = nitroActive ? topSpeed * (hasNitro ? 1.32 : 1.24) : topSpeed;
+
+        if (keys.up) {
+          bikePhys.speed += accelRate * (nitroActive ? 1.65 : 1.0) * dt;
+        } else if (keys.down) {
+          bikePhys.speed -= accelRate * 1.45 * dt;
+        } else {
+          bikePhys.speed *= Math.pow(0.55, dt);
+        }
+
+        bikePhys.speed = THREE.MathUtils.clamp(bikePhys.speed, -25, effectiveTop);
+
+        if (nitroActive) {
+          bikePhys.nitro = Math.max(0, bikePhys.nitro - (hasTurbo ? 18 : 26) * dt);
+          if (nitroFlame) nitroFlame.visible = true;
+        } else {
+          bikePhys.nitro = Math.min(100, bikePhys.nitro + (hasTurbo ? 16 : 8) * dt);
+          if (nitroFlame) nitroFlame.visible = false;
+        }
+
+        // Steering & Lean Angle
+        let steerInput = 0;
+        if (keys.left) steerInput -= 1;
+        if (keys.right) steerInput += 1;
+
+        const grip = isWet ? 0.84 : 1.0;
+        bikePhys.steerAngle = THREE.MathUtils.lerp(bikePhys.steerAngle, steerInput, dt * 8 * grip);
+        bikePhys.x += bikePhys.steerAngle * steerRate * 15 * (Math.min(Math.abs(bikePhys.speed), 140) / 100) * dt;
+        bikePhys.z -= (bikePhys.speed * 0.42) * dt;
+
+        // Gravity & Jumps
+        if (!bikePhys.grounded) {
+          bikePhys.vy -= 28 * dt;
+          bikePhys.y += bikePhys.vy * dt;
+          if (bikePhys.y <= 0.15) {
+            bikePhys.y = 0.15;
+            bikePhys.vy = 0;
+            bikePhys.grounded = true;
+          }
+        }
+
+        // Guardrail Boundaries
+        const roadCx = getRoadCenterX(bikePhys.z);
+        const minX = roadCx - ROAD_HALF_WIDTH + 2.2;
+        const maxX = roadCx + ROAD_HALF_WIDTH - 2.2;
+        if (bikePhys.x < minX) {
+          bikePhys.x = minX;
+          bikePhys.speed *= 0.92;
+          spawnCrashSparks(minX - 0.6, 0.6, bikePhys.z, 3);
+        } else if (bikePhys.x > maxX) {
+          bikePhys.x = maxX;
+          bikePhys.speed *= 0.92;
+          spawnCrashSparks(maxX + 0.6, 0.6, bikePhys.z, 3);
+        }
+
+        // Obstacle & Traffic Collision Check
+        const crashThreshold = hasArmor ? 95 : 58;
+        for (let i = 0; i < obstacles.length; i++) {
+          const ob = obstacles[i];
+          const dz = Math.abs(bikePhys.z - ob.z);
+          const dx = Math.abs(bikePhys.x - ob.x);
+
+          if (dz < ob.l + 1.2 && dx < ob.w + 0.9) {
+            if (ob.type === 'ramp') {
+              if (bikePhys.grounded && bikePhys.speed > 40) {
+                bikePhys.grounded = false;
+                bikePhys.vy = (11 + bikePhys.speed * 0.04) * (hasBoots ? 1.22 : 1.0);
+              }
+            } else if (bikePhys.y < 1.8) {
+              if (bikePhys.speed > crashThreshold) {
+                triggerRiderCrash(bikePhys.speed);
+                break;
+              } else {
+                bikePhys.speed *= 0.35;
+                bikePhys.x += (bikePhys.x >= ob.x ? 2.5 : -2.5);
+                spawnCrashSparks(bikePhys.x, 0.7, bikePhys.z, 8);
+              }
+            }
+          }
+        }
+
+        // Update Player Bike & Rider Transforms
+        const targetRoll = -bikePhys.steerAngle * 0.42;
+        const targetPitch = nitroActive ? 0.14 : (!bikePhys.grounded ? bikePhys.vy * 0.025 : 0);
+        bikePhys.rollAngle = THREE.MathUtils.lerp(bikePhys.rollAngle, targetRoll, dt * 10);
+        bikePhys.pitchAngle = THREE.MathUtils.lerp(bikePhys.pitchAngle, targetPitch, dt * 8);
+
+        if (playerBike) {
+          playerBike.position.set(bikePhys.x, bikePhys.y, bikePhys.z);
+          playerBike.rotation.set(bikePhys.pitchAngle, -bikePhys.steerAngle * 0.14, bikePhys.rollAngle);
+        }
+        if (riderGroup) {
+          riderGroup.position.set(bikePhys.x, bikePhys.y, bikePhys.z);
+          riderGroup.rotation.set(bikePhys.pitchAngle, -bikePhys.steerAngle * 0.14, bikePhys.rollAngle * 1.18);
+        }
+
+        const wheelSpin = (bikePhys.speed * 0.25) * dt;
+        if (frontWheel) frontWheel.rotation.x -= wheelSpin;
+        if (rearWheel) rearWheel.rotation.x -= wheelSpin;
+      }
+
+      // Dynamic Chase Camera
+      const camTargetX = crashState.active ? crashState.riderPos.x : bikePhys.x;
+      const camTargetZ = crashState.active ? crashState.riderPos.z : bikePhys.z;
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camTargetX, dt * 7);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, bikePhys.y + 3.6 + (crashState.active ? 1.8 : 0), dt * 6);
+      camera.position.z = camTargetZ + (crashState.active ? 9.5 : 7.2);
+      camera.fov = THREE.MathUtils.lerp(camera.fov, 62 + (bikePhys.speed / 280) * 18, dt * 5);
+      camera.updateProjectionMatrix();
+      camera.lookAt(camTargetX, bikePhys.y + 1.1, camTargetZ - 14);
+
+      // Update HUD
+      updateHUD();
+
+      // Check Finish Line
+      if (bikePhys.z <= -ROAD_TOTAL_Z) {
+        finishRace();
+      }
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-speed').textContent = Math.round(Math.abs(bikePhys.speed));
+      document.getElementById('hud-nitro-bar').style.width = `${Math.round(bikePhys.nitro)}%`;
+
+      const pct = Math.min(100, Math.max(0, Math.round((-bikePhys.z / ROAD_TOTAL_Z) * 100)));
+      document.getElementById('hud-progress').textContent = `${pct}%`;
+
+      let rank = 1;
+      opponents.forEach((b) => { if (b.z < bikePhys.z) rank++; });
+      document.getElementById('hud-rank').textContent = `${rank}/4`;
+
+      const mins = String(Math.floor(bikePhys.raceTime / 60)).padStart(2, '0');
+      const secs = String(Math.floor(bikePhys.raceTime % 60)).padStart(2, '0');
+      document.getElementById('hud-time').textContent = `${mins}:${secs}`;
+
+      drawRadar();
+    }
+
+    function drawRadar() {
+      const c = document.getElementById('radar-canvas');
+      if (!c) return;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+
+      const midX = c.width / 2;
+      const midY = c.height * 0.72;
+
+      // Road ribbon preview
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 14;
+      ctx.beginPath();
+      for (let dz = -260; dz <= 80; dz += 20) {
+        const z = bikePhys.z + dz;
+        const rx = midX + (getRoadCenterX(z) - bikePhys.x) * 0.45;
+        const ry = midY + dz * 0.35;
+        if (dz === -260) ctx.moveTo(rx, ry);
+        else ctx.lineTo(rx, ry);
+      }
+      ctx.stroke();
+
+      // Bots
+      opponents.forEach((b) => {
+        const bx = midX + (b.mesh.position.x - bikePhys.x) * 0.45;
+        const by = midY + (b.z - bikePhys.z) * 0.35;
+        if (by > 5 && by < c.height - 5) {
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(bx, by, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+
+      // Player dot
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(midX, midY, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function animateLoop(now) {
+      requestAnimationFrame(animateLoop);
+      const dt = Math.min((now - lastTimestamp) / 1000, 0.05);
+      lastTimestamp = now;
+      updateSimulation(dt);
+      if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+
+    // =========================================================================
+    // 11. UI RENDERING, GARAGE, SHOP, CONTROLS & FLOW
+    // =========================================================================
+    function t(key) {
+      return (LOCALES[saveState.lang] && LOCALES[saveState.lang][key]) || LOCALES.ru[key] || key;
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const k = el.getAttribute('data-i18n');
+        el.textContent = t(k);
+      });
+
+      ['ky', 'ru', 'en'].forEach((code) => {
+        const btn = document.getElementById(`lang-${code}`);
+        if (btn) {
+          btn.className = saveState.lang === code
+            ? 'px-2.5 py-1 rounded-full bg-sky-400 text-slate-950 font-black transition'
+            : 'px-2.5 py-1 rounded-full text-slate-300 hover:text-white transition';
+        }
+      });
+
+      const gfxNames = t('gfxLevels');
+      document.getElementById('gfx-label').textContent = gfxNames[saveState.gfxQuality] || 'Ultra';
+      document.getElementById('coin-display').textContent = saveState.coins;
+      document.getElementById('author-badge').textContent = `✍️ ${saveState.signature}`;
+
+      const selBike = BIKES.find((b) => b.id === saveState.selectedBike) || BIKES[0];
+      document.getElementById('selected-bike-label').textContent = selBike.name;
+      const selTrack = TRACKS[currentTrackIdx] || TRACKS[0];
+      document.getElementById('selected-track-label').textContent = selTrack.name[saveState.lang];
+
+      renderTracksGrid();
+      renderGarageGrid();
+      renderShopGrid();
+    }
+
+    function setLanguage(lang) {
+      saveState.lang = lang;
+      persistSave();
+      applyTranslations();
+    }
+
+    function cycleGraphicsQuality() {
+      saveState.gfxQuality = (saveState.gfxQuality + 1) % 4;
+      persistSave();
+      if (renderer) {
+        const ratios = [0.75, 1.0, 1.5, Math.min(window.devicePixelRatio || 1, 2)];
+        renderer.setPixelRatio(ratios[saveState.gfxQuality]);
+      }
+      createSlantedRainSystem();
+      const tr = TRACKS[currentTrackIdx];
+      if (rainSystem && tr) rainSystem.visible = (tr.weather === 'rain' || tr.weather === 'storm');
+      applyTranslations();
+    }
+
+    function switchMenuTab(tab) {
+      ['tracks', 'garage', 'shop'].forEach((name) => {
+        document.getElementById(`panel-${name}`).classList.toggle('hidden', name !== tab);
+        const btn = document.getElementById(`tab-${name}`);
+        btn.className = name === tab
+          ? 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-sky-500 text-slate-950 transition'
+          : 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-800/80 text-slate-200 hover:bg-slate-700 transition';
+      });
+    }
+
+    function renderTracksGrid() {
+      const container = document.getElementById('panel-tracks');
+      container.innerHTML = TRACKS.map((tr, idx) => {
+        const active = idx === currentTrackIdx;
+        const weatherTag = tr.weather === 'storm' ? t('stormBadge') : (tr.weather === 'rain' ? t('rainBadge') : t('sunBadge'));
+        return `
+          <div onclick="selectTrack(${idx})" class="p-3.5 rounded-2xl border cursor-pointer transition ${active ? 'bg-sky-500/20 border-sky-400' : 'bg-slate-900/75 border-slate-800 hover:border-slate-600'}">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="text-xs font-black px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">#${idx + 1}</span>
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${tr.weather === 'clear' ? 'bg-amber-500/20 text-amber-300' : 'bg-cyan-500/20 text-cyan-300'}">${weatherTag}</span>
+            </div>
+            <div class="font-extrabold text-sm text-white">${tr.name[saveState.lang]}</div>
+            <div class="text-xs text-slate-400 mt-0.5 line-clamp-1">${tr.desc[saveState.lang]}</div>
+            <div class="mt-2 text-xs font-bold text-amber-300">🏆 +${tr.reward} 🪙</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectTrack(idx) {
+      currentTrackIdx = idx;
+      saveState.selectedTrackIdx = idx;
+      persistSave();
+      buildTrack(idx);
+      applyTranslations();
+    }
+
+    function renderGarageGrid() {
+      const container = document.getElementById('panel-garage');
+      container.innerHTML = BIKES.map((b) => {
+        const owned = saveState.ownedBikes.includes(b.id);
+        const selected = saveState.selectedBike === b.id;
+        return `
+          <div class="p-3.5 rounded-2xl border ${selected ? 'bg-emerald-500/15 border-emerald-400' : 'bg-slate-900/75 border-slate-800'} flex flex-col justify-between gap-2">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="font-black text-sm text-white">🏍️ ${b.name}</span>
+                <span class="w-4 h-4 rounded-full border border-white/40" style="background:#${b.color.toString(16).padStart(6, '0')}"></span>
+              </div>
+              <div class="mt-2 space-y-1 text-[11px] text-slate-300">
+                <div>${t('speed')}: <strong class="text-sky-300">${b.maxSpeed} km/h</strong></div>
+                <div>${t('accel')}: <strong class="text-emerald-300">${b.accel}</strong></div>
+                <div>${t('handling')}: <strong class="text-amber-300">${b.handling.toFixed(1)}</strong></div>
+              </div>
+            </div>
+            <button onclick="handleBikeAction('${b.id}')" class="w-full py-2 rounded-xl text-xs font-black transition ${selected ? 'bg-emerald-400 text-slate-950' : (owned ? 'bg-sky-400 text-slate-950' : (saveState.coins >= b.price ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-500'))}">
+              ${selected ? t('selected') : (owned ? t('select') : `${t('buy')} (${b.price} 🪙)`)}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function handleBikeAction(id) {
+      const bike = BIKES.find((b) => b.id === id);
+      if (!bike) return;
+      if (saveState.ownedBikes.includes(id)) {
+        saveState.selectedBike = id;
+        persistSave();
+        rebuildPlayerBike();
+        applyTranslations();
+      } else if (saveState.coins >= bike.price) {
+        saveState.coins -= bike.price;
+        saveState.ownedBikes.push(id);
+        saveState.selectedBike = id;
+        persistSave();
+        rebuildPlayerBike();
+        applyTranslations();
+      }
+    }
+
+    function renderShopGrid() {
+      const container = document.getElementById('panel-shop');
+      container.innerHTML = GEAR_ITEMS.map((g) => {
+        const owned = saveState.ownedGear.includes(g.id);
+        return `
+          <div class="p-3.5 rounded-2xl border ${owned ? 'bg-amber-500/15 border-amber-400/60' : 'bg-slate-900/75 border-slate-800'} flex flex-col justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xl">${g.icon}</span>
+                <span class="font-extrabold text-sm text-white">${g.name[saveState.lang]}</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">${g.desc[saveState.lang]}</p>
+            </div>
+            <button onclick="buyGearItem('${g.id}')" class="w-full py-2 rounded-xl text-xs font-black transition ${owned ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40' : (saveState.coins >= g.price ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-500')}">
+              ${owned ? t('equipped') : `${t('buy')} (${g.price} 🪙)`}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function buyGearItem(id) {
+      if (saveState.ownedGear.includes(id)) return;
+      const item = GEAR_ITEMS.find((g) => g.id === id);
+      if (!item || saveState.coins < item.price) return;
+      saveState.coins -= item.price;
+      saveState.ownedGear.push(id);
+      persistSave();
+      applyTranslations();
+    }
+
+    function startRace() {
+      initAudio();
+      crashState.active = false;
+      document.getElementById('crash-banner').classList.add('hidden');
+
+      buildTrack(currentTrackIdx);
+      rebuildPlayerBike();
+
+      bikePhys.x = getRoadCenterX(0);
+      bikePhys.y = 0.15;
+      bikePhys.z = 0;
+      bikePhys.vy = 0;
+      bikePhys.speed = 0;
+      bikePhys.steerAngle = 0;
+      bikePhys.rollAngle = 0;
+      bikePhys.pitchAngle = 0;
+      bikePhys.nitro = 100;
+      bikePhys.grounded = true;
+      bikePhys.raceTime = 0;
+
+      gameMode = 'racing';
+      document.getElementById('menu-screen').classList.add('hidden');
+      document.getElementById('pause-modal').classList.add('hidden');
+      document.getElementById('finish-modal').classList.add('hidden');
+      document.getElementById('hud-screen').classList.remove('hidden');
+      document.getElementById('btn-pause').classList.remove('hidden');
+      document.getElementById('btn-pause').classList.add('flex');
+    }
+
+    function togglePause() {
+      if (gameMode === 'racing') {
+        gameMode = 'paused';
+        document.getElementById('pause-modal').classList.remove('hidden');
+      } else if (gameMode === 'paused') {
+        gameMode = 'racing';
+        document.getElementById('pause-modal').classList.add('hidden');
+      }
+    }
+
+    function finishRace() {
+      gameMode = 'finished';
+      let rank = 1;
+      opponents.forEach((b) => { if (b.z < bikePhys.z) rank++; });
+
+      const tr = TRACKS[currentTrackIdx];
+      const rankMult = rank === 1 ? 1.0 : (rank === 2 ? 0.7 : (rank === 3 ? 0.5 : 0.3));
+      const vipMult = saveState.ownedGear.includes('berkut_cup') ? 1.35 : 1.0;
+      const earned = Math.round(tr.reward * rankMult * vipMult);
+
+      saveState.coins += earned;
+      persistSave();
+      applyTranslations();
+
+      const mins = String(Math.floor(bikePhys.raceTime / 60)).padStart(2, '0');
+      const secs = String(Math.floor(bikePhys.raceTime % 60)).padStart(2, '0');
+
+      document.getElementById('fin-rank').textContent = `${rank} / 4`;
+      document.getElementById('fin-time').textContent = `${mins}:${secs}`;
+      document.getElementById('fin-reward').textContent = `+${earned} 🪙`;
+
+      document.getElementById('hud-screen').classList.add('hidden');
+      document.getElementById('btn-pause').classList.add('hidden');
+      document.getElementById('finish-modal').classList.remove('hidden');
+    }
+
+    function returnToMenu() {
+      gameMode = 'menu';
+      crashState.active = false;
+      document.getElementById('crash-banner').classList.add('hidden');
+      document.getElementById('hud-screen').classList.add('hidden');
+      document.getElementById('pause-modal').classList.add('hidden');
+      document.getElementById('finish-modal').classList.add('hidden');
+      document.getElementById('btn-pause').classList.add('hidden');
+      document.getElementById('menu-screen').classList.remove('hidden');
+      applyTranslations();
+    }
+
+    // Custom Signature Editor Modal
+    function editAuthorSignature() {
+      document.getElementById('sig-input').value = saveState.signature;
+      document.getElementById('sig-modal').classList.remove('hidden');
+    }
+    function closeSigModal() {
+      document.getElementById('sig-modal').classList.add('hidden');
+    }
+    function saveSigModal() {
+      const val = document.getElementById('sig-input').value.trim();
+      if (val) {
+        saveState.signature = val;
+        persistSave();
+        applyTranslations();
+      }
+      closeSigModal();
+    }
+
+    // Keyboard & Touch Event Listeners
+    function setupControls() {
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true;
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
+        if (e.code === 'Space' || e.code === 'ShiftLeft') keys.nitro = true;
+        if (e.code === 'Escape' && (gameMode === 'racing' || gameMode === 'paused')) togglePause();
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false;
+        if (e.code === 'Space' || e.code === 'ShiftLeft') keys.nitro = false;
+      });
+
+      const bindTouch = (id, keyName) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const down = (ev) => { ev.preventDefault(); keys[keyName] = true; };
+        const up = (ev) => { ev.preventDefault(); keys[keyName] = false; };
+        el.addEventListener('touchstart', down, { passive: false });
+        el.addEventListener('touchend', up, { passive: false });
+        el.addEventListener('touchcancel', up, { passive: false });
+        el.addEventListener('mousedown', down);
+        el.addEventListener('mouseup', up);
+        el.addEventListener('mouseleave', up);
+      };
+
+      bindTouch('touch-left', 'left');
+      bindTouch('touch-right', 'right');
+      bindTouch('touch-gas', 'up');
+      bindTouch('touch-brake', 'down');
+      bindTouch('touch-nitro', 'nitro');
+    }
+
+    // Boot Application
+    window.addEventListener('load', () => {
+      initThree();
+      setupControls();
+      applyTranslations();
+      lastTimestamp = performance.now();
+      requestAnimationFrame(animateLoop);
+    });
+  </script>
+</body>
+</html>
